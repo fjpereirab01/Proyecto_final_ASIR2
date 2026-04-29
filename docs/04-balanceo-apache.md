@@ -1,56 +1,95 @@
-# 4. Balanceo de carga con Apache
+# 4. Balanceo de carga con Nginx
 
 [← Volver al índice](../README.md)
 
 ---
 
-## 4.1 Módulos necesarios
+## 4.1 Instalación
 
 ```bash
-a2enmod proxy proxy_http proxy_balancer lbmethod_byrequests status
-systemctl restart apache2
+apt install nginx -y
+systemctl enable nginx
+systemctl start nginx
 ```
 
-| Módulo | Función |
+---
+
+## 4.2 Configuración del balanceador
+
+Fichero `/etc/nginx/sites-available/balancer.conf`:
+
+```nginx
+upstream servidores_web {
+    server 172.16.0.21;
+    server 172.16.0.22;
+}
+
+server {
+    listen 80;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    ssl_certificate     /etc/ssl/certs/rulethegame.crt;
+    ssl_certificate_key /etc/ssl/private/rulethegame.key;
+
+    location / {
+        proxy_pass http://servidores_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+```bash
+ln -s /etc/nginx/sites-available/balancer.conf /etc/nginx/sites-enabled/balancer.conf
+nginx -t
+systemctl reload nginx
+```
+
+---
+
+## 4.3 Certificado SSL autofirmado
+
+Para habilitar HTTPS se genera un certificado autofirmado con OpenSSL válido por 365 días:
+
+```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/rulethegame.key \
+  -out /etc/ssl/certs/rulethegame.crt \
+  -subj "/C=ES/ST=Navarra/L=Pamplona/O=RuleTheGame/CN=192.168.10.1"
+```
+
+| Parámetro | Descripción |
 |---|---|
-| `mod_proxy` | Núcleo del sistema de proxy inverso |
-| `mod_proxy_http` | Soporte del protocolo HTTP sobre el proxy |
-| `mod_proxy_balancer` | Gestión del cluster de servidores backend |
-| `mod_lbmethod_byrequests` | Algoritmo round-robin por número de peticiones |
-| `mod_status` | Panel de monitorización del balanceador (opcional) |
+| `-x509` | Genera un certificado autofirmado en lugar de una solicitud CSR |
+| `-nodes` | No cifra la clave privada con contraseña |
+| `-days 365` | Validez del certificado |
+| `-newkey rsa:2048` | Genera una clave RSA de 2048 bits |
+
+> El navegador mostrará una advertencia de seguridad al ser autofirmado. En un entorno de producción se utilizaría Let's Encrypt.
 
 ---
 
-## 4.2 Configuración del VirtualHost
+## 4.4 Comportamiento del balanceo
 
-Fichero `/etc/apache2/sites-available/balancer.conf`:
+- Nginx usa el algoritmo **round-robin** por defecto, distribuyendo las peticiones de forma alternada entre `web1` y `web2`.
+- Todo el tráfico HTTP entrante en el puerto 80 es redirigido automáticamente a HTTPS (puerto 443).
+- Si uno de los servidores web no responde, Nginx lo marca como no disponible y deja de enviarle tráfico.
+- Añadir un tercer servidor web solo requiere un nuevo `server` en el bloque `upstream`, sin tocar el router ni la base de datos.
 
-```apache
-<VirtualHost *:80>
+---
 
-    <Proxy "balancer://mycluster">
-        BalancerMember "http://172.16.0.21"
-        BalancerMember "http://172.16.0.22"
-    </Proxy>
+## 4.5 Reglas iptables en el router para HTTPS
 
-    ProxyPass        "/" "balancer://mycluster/"
-    ProxyPassReverse "/" "balancer://mycluster/"
-
-</VirtualHost>
-```
+Para que el tráfico HTTPS llegue al balanceador, el router aplica DNAT también en el puerto 443:
 
 ```bash
-a2ensite balancer.conf
-systemctl reload apache2
+iptables -t nat -A PREROUTING -i eth1 -p tcp --dport 443 -j DNAT --to-destination 172.16.0.10:443
+iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destination 172.16.0.10:443
 ```
-
----
-
-## 4.3 Comportamiento del balanceo
-
-- El algoritmo **byrequests** distribuye las peticiones de forma alternada (round-robin).
-- Si uno de los servidores web no responde, Apache lo marca automáticamente como **fuera de servicio** y deja de enviarle tráfico hasta que vuelva a estar disponible.
-- Añadir un tercer servidor web solo requiere un nuevo `BalancerMember` en este fichero, sin tocar el router ni la base de datos.
 
 ---
 
