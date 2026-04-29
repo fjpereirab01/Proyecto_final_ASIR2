@@ -6,201 +6,143 @@ Motor: **MariaDB** · Nombre de la BD: `proyecto_asir`
 
 ---
 
-## 6.1 Modelo entidad-relación
+## 6.1 Esquema de tablas
 
-Relaciones principales del modelo:
+### usuarios
 
-- `USUARIO 1 — 0..1 COACH` — un usuario puede ser coach (subtipo)
-- `USUARIO 1 — 0..1 CLIENTE` — un usuario puede ser cliente (subtipo)
-- `COACH 1 — 0..N SESION` — un coach imparte muchas sesiones
-- `CLIENTE 1 — 0..N SESION` — un cliente contrata muchas sesiones
-- `VIDEOJUEGO 1 — 0..N SESION` — un videojuego puede estar en muchas sesiones
-- `SESION 1 — 0..1 PAGO` — una sesión puede estar pendiente de pago o tener uno asociado
-- `COACH 1 — 0..N DISPONIBILIDAD` — cada coach define múltiples franjas horarias
-
----
-
-## 6.2 Esquema de tablas
-
-### Usuarios
-
-Tabla central de autenticación. El login se realiza con `email` + `contraseña`.
+Tabla central de autenticación y gestión de usuarios. Incluye un campo `rol` que distingue entre clientes, coaches y el administrador.
 
 | Campo | Tipo | Restricciones | Descripción |
 |---|---|---|---|
-| id_usuario | INT | PK, AUTO_INCREMENT | Identificador único |
-| nombre | VARCHAR(100) | NOT NULL | Nombre completo |
-| email | VARCHAR(150) | UNIQUE, NOT NULL | Correo electrónico (login) |
-| contraseña | VARCHAR(255) | NOT NULL | Contraseña cifrada (bcrypt) |
-| rol | ENUM | NOT NULL | `coach` / `cliente` |
-| fecha_registro | DATE | DEFAULT CURRENT_DATE | Fecha de creación de cuenta |
+| id | INT | PK, AUTO_INCREMENT | Identificador único |
+| nombre | VARCHAR(100) | NOT NULL | Nombre del usuario |
+| apellido | VARCHAR(100) | NOT NULL | Apellido del usuario |
+| nom_usu | VARCHAR(100) | UNIQUE, NOT NULL | Nombre de usuario (login) |
+| email | VARCHAR(150) | UNIQUE, NOT NULL | Correo electrónico |
+| password | VARCHAR(255) | NOT NULL | Contraseña cifrada (bcrypt) |
+| fecha_nac | DATE | NULL | Fecha de nacimiento |
+| localidad | VARCHAR(100) | NULL | Ciudad o localidad |
+| rol | ENUM | DEFAULT 'cliente' | `cliente` / `coach` / `admin` |
+| created_at | TIMESTAMP | DEFAULT NOW() | Fecha de registro |
 
-### Coaches
+### coaches
 
-Subtipo de USUARIO con información profesional del entrenador. La PK es también FK hacia Usuarios.
-
-| Campo | Tipo | Restricciones | Descripción |
-|---|---|---|---|
-| id_coach | INT | FK → Usuarios.id_usuario | Referencia al usuario coach |
-| especialidad | VARCHAR(100) | NOT NULL | Videojuego principal |
-| experiencia | TEXT | NULL | Años de experiencia y logros |
-| tarifa_hora | DECIMAL(10,2) | NOT NULL | Precio por hora en euros |
-| disponibilidad | DATETIME | NULL | Campo auxiliar de disponibilidad |
-
-### Clientes
-
-Subtipo de USUARIO con el perfil del jugador que contrata sesiones.
+Perfil profesional del coach. Vinculado a un usuario mediante `usuario_id`.
 
 | Campo | Tipo | Restricciones | Descripción |
 |---|---|---|---|
-| id_cliente | INT | FK → Usuarios.id_usuario | Referencia al usuario cliente |
-| nivel_actual | VARCHAR(50) | NULL | Rango en su videojuego principal |
-| objetivos | TEXT | NULL | Metas de mejora con el coaching |
+| id | INT | PK, AUTO_INCREMENT | Identificador único |
+| usuario_id | INT | FK → usuarios.id | Usuario vinculado al coach |
+| nombre | VARCHAR(100) | NOT NULL | Nombre del coach |
+| apellido | VARCHAR(100) | NOT NULL | Apellido del coach |
+| especialidad | VARCHAR(200) | NULL | Especialidad o rol dentro del juego |
+| juego | VARCHAR(100) | NULL | Videojuego principal |
+| descripcion | TEXT | NULL | Descripción del perfil |
+| contacto | VARCHAR(150) | NULL | Email de contacto |
+| precio | DECIMAL(8,2) | DEFAULT 0.00 | Precio por hora en euros |
+| valoracion_media | DECIMAL(3,2) | DEFAULT 0.00 | Media de valoraciones recibidas |
+| created_at | TIMESTAMP | DEFAULT NOW() | Fecha de alta |
 
-### Videojuegos
+### sesiones
 
-Catálogo centralizado de juegos disponibles en la plataforma.
-
-| Campo | Tipo | Restricciones | Descripción |
-|---|---|---|---|
-| id_juego | INT | PK, AUTO_INCREMENT | Identificador único |
-| nombre | VARCHAR(100) | UNIQUE, NOT NULL | Nombre del juego (ej: CS2, Valorant) |
-| descripcion | TEXT | NULL | Descripción del juego |
-| categoria | VARCHAR(50) | NOT NULL | FPS, MOBA, Battle Royale, etc. |
-
-### Sesiones
-
-Tabla central del modelo. Registra cada contratación de coaching.
+Registra cada contratación de coaching entre un cliente y un coach.
 
 | Campo | Tipo | Restricciones | Descripción |
 |---|---|---|---|
-| id_sesion | INT | PK, AUTO_INCREMENT | Identificador único |
-| id_coach | INT | FK → Coaches | Coach que imparte |
-| id_cliente | INT | FK → Clientes | Cliente que contrata |
-| id_juego | INT | FK → Videojuegos | Videojuego de la sesión |
-| fecha_inicio | DATETIME | NOT NULL | Inicio programado |
-| duracion_min | INT | NOT NULL | Duración en minutos |
+| id | INT | PK, AUTO_INCREMENT | Identificador único |
+| cliente_id | INT | FK → usuarios.id | Cliente que contrata |
+| coach_id | INT | FK → coaches.id | Coach que imparte |
+| fecha | DATETIME | NOT NULL | Fecha y hora de la sesión |
+| duracion | INT | DEFAULT 60 | Duración en minutos |
 | estado | ENUM | DEFAULT 'pendiente' | `pendiente` / `completada` / `cancelada` |
-| notas | TEXT | NULL | Comentarios post-sesión |
+| notas | TEXT | NULL | Notas o comentarios de la sesión |
+| created_at | TIMESTAMP | DEFAULT NOW() | Fecha de creación del registro |
 
-> La lógica de cancelación se implementa comprobando si `NOW() < fecha_inicio - plazo_minutos`.
+### comentarios
 
-### Pagos
-
-Transacción económica asociada a cada sesión completada.
-
-| Campo | Tipo | Restricciones | Descripción |
-|---|---|---|---|
-| id_pago | INT | PK, AUTO_INCREMENT | Identificador único |
-| id_sesion | INT | FK → Sesiones, UNIQUE | Sesión asociada |
-| monto | DECIMAL(10,2) | NOT NULL | Importe en euros |
-| fecha_pago | DATE | DEFAULT CURRENT_DATE | Fecha de la transacción |
-| metodo | VARCHAR(50) | NOT NULL | Tarjeta, PayPal, transferencia |
-| estado | ENUM | DEFAULT 'pendiente' | `pagado` / `pendiente` |
-
-### Disponibilidad
-
-Franjas horarias semanales recurrentes en las que cada coach acepta reservas.
+Valoraciones que los clientes dejan sobre los coaches.
 
 | Campo | Tipo | Restricciones | Descripción |
 |---|---|---|---|
-| id_disponibilidad | INT | PK, AUTO_INCREMENT | Identificador del bloque |
-| id_coach | INT | FK → Coaches | Coach al que pertenece |
-| dia_semana | TINYINT | NOT NULL | 0 = Lunes … 6 = Domingo |
-| hora_inicio | TIME | NOT NULL | Inicio del bloque disponible |
-| hora_fin | TIME | NOT NULL | Fin del bloque disponible |
+| id | INT | PK, AUTO_INCREMENT | Identificador único |
+| coach_id | INT | FK → coaches.id | Coach valorado |
+| usuario_id | INT | FK → usuarios.id | Usuario que valora |
+| comentario | TEXT | NOT NULL | Texto del comentario |
+| valoracion | INT | NOT NULL | Puntuación del 1 al 5 |
+| created_at | TIMESTAMP | DEFAULT NOW() | Fecha del comentario |
 
 ---
 
-## 6.3 Script SQL de creación
+## 6.2 Script SQL de creación
 
 ```sql
 CREATE DATABASE IF NOT EXISTS proyecto_asir
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE proyecto_asir;
 
-CREATE TABLE Usuarios (
-    id_usuario     INT          NOT NULL AUTO_INCREMENT,
-    nombre         VARCHAR(100) NOT NULL,
-    email          VARCHAR(150) NOT NULL,
-    contrasena     VARCHAR(255) NOT NULL,
-    rol            ENUM('coach','cliente') NOT NULL,
-    fecha_registro DATE         DEFAULT (CURRENT_DATE),
-    PRIMARY KEY (id_usuario),
-    UNIQUE KEY uq_email (email)
+CREATE TABLE usuarios (
+    id         INT          NOT NULL AUTO_INCREMENT,
+    nombre     VARCHAR(100) NOT NULL,
+    apellido   VARCHAR(100) NOT NULL,
+    nom_usu    VARCHAR(100) NOT NULL,
+    email      VARCHAR(150) NOT NULL,
+    password   VARCHAR(255) NOT NULL,
+    fecha_nac  DATE,
+    localidad  VARCHAR(100),
+    rol        ENUM('cliente','coach','admin') DEFAULT 'cliente',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_email (email),
+    UNIQUE KEY uq_nom_usu (nom_usu)
 );
 
-CREATE TABLE Coaches (
-    id_coach       INT           NOT NULL,
-    especialidad   VARCHAR(100)  NOT NULL,
-    experiencia    TEXT,
-    tarifa_hora    DECIMAL(10,2) NOT NULL,
-    disponibilidad DATETIME,
-    PRIMARY KEY (id_coach),
-    CONSTRAINT fk_coach_usuario FOREIGN KEY (id_coach)
-        REFERENCES Usuarios(id_usuario) ON DELETE CASCADE ON UPDATE CASCADE
+CREATE TABLE coaches (
+    id               INT           NOT NULL AUTO_INCREMENT,
+    usuario_id       INT,
+    nombre           VARCHAR(100)  NOT NULL,
+    apellido         VARCHAR(100)  NOT NULL,
+    especialidad     VARCHAR(200),
+    juego            VARCHAR(100),
+    descripcion      TEXT,
+    contacto         VARCHAR(150),
+    precio           DECIMAL(8,2)  DEFAULT 0.00,
+    valoracion_media DECIMAL(3,2)  DEFAULT 0.00,
+    created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_coach_usuario FOREIGN KEY (usuario_id)
+        REFERENCES usuarios(id) ON DELETE SET NULL
 );
 
-CREATE TABLE Clientes (
-    id_cliente   INT         NOT NULL,
-    nivel_actual VARCHAR(50),
-    objetivos    TEXT,
-    PRIMARY KEY (id_cliente),
-    CONSTRAINT fk_cliente_usuario FOREIGN KEY (id_cliente)
-        REFERENCES Usuarios(id_usuario) ON DELETE CASCADE ON UPDATE CASCADE
+CREATE TABLE sesiones (
+    id         INT      NOT NULL AUTO_INCREMENT,
+    cliente_id INT      NOT NULL,
+    coach_id   INT      NOT NULL,
+    fecha      DATETIME NOT NULL,
+    duracion   INT      DEFAULT 60,
+    estado     ENUM('pendiente','completada','cancelada') DEFAULT 'pendiente',
+    notas      TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_sesion_cliente FOREIGN KEY (cliente_id) REFERENCES usuarios(id),
+    CONSTRAINT fk_sesion_coach   FOREIGN KEY (coach_id)   REFERENCES coaches(id)
 );
 
-CREATE TABLE Videojuegos (
-    id_juego    INT          NOT NULL AUTO_INCREMENT,
-    nombre      VARCHAR(100) NOT NULL,
-    descripcion TEXT,
-    categoria   VARCHAR(50)  NOT NULL,
-    PRIMARY KEY (id_juego),
-    UNIQUE KEY uq_nombre_juego (nombre)
-);
-
-CREATE TABLE Sesiones (
-    id_sesion    INT      NOT NULL AUTO_INCREMENT,
-    id_coach     INT      NOT NULL,
-    id_cliente   INT      NOT NULL,
-    id_juego     INT      NOT NULL,
-    fecha_inicio DATETIME NOT NULL,
-    duracion_min INT      NOT NULL,
-    estado       ENUM('pendiente','completada','cancelada') DEFAULT 'pendiente',
-    notas        TEXT,
-    PRIMARY KEY (id_sesion),
-    CONSTRAINT fk_sesion_coach   FOREIGN KEY (id_coach)   REFERENCES Coaches(id_coach),
-    CONSTRAINT fk_sesion_cliente FOREIGN KEY (id_cliente) REFERENCES Clientes(id_cliente),
-    CONSTRAINT fk_sesion_juego   FOREIGN KEY (id_juego)   REFERENCES Videojuegos(id_juego)
-);
-
-CREATE TABLE Pagos (
-    id_pago    INT           NOT NULL AUTO_INCREMENT,
-    id_sesion  INT           NOT NULL,
-    monto      DECIMAL(10,2) NOT NULL,
-    fecha_pago DATE          DEFAULT (CURRENT_DATE),
-    metodo     VARCHAR(50)   NOT NULL,
-    estado     ENUM('pagado','pendiente') DEFAULT 'pendiente',
-    PRIMARY KEY (id_pago),
-    UNIQUE KEY uq_pago_sesion (id_sesion),
-    CONSTRAINT fk_pago_sesion FOREIGN KEY (id_sesion) REFERENCES Sesiones(id_sesion)
-);
-
-CREATE TABLE Disponibilidad (
-    id_disponibilidad INT     NOT NULL AUTO_INCREMENT,
-    id_coach          INT     NOT NULL,
-    dia_semana        TINYINT NOT NULL COMMENT '0=Lun 1=Mar 2=Mie 3=Jue 4=Vie 5=Sab 6=Dom',
-    hora_inicio       TIME    NOT NULL,
-    hora_fin          TIME    NOT NULL,
-    PRIMARY KEY (id_disponibilidad),
-    CONSTRAINT fk_disp_coach FOREIGN KEY (id_coach)
-        REFERENCES Coaches(id_coach) ON DELETE CASCADE ON UPDATE CASCADE
+CREATE TABLE comentarios (
+    id         INT  NOT NULL AUTO_INCREMENT,
+    coach_id   INT  NOT NULL,
+    usuario_id INT  NOT NULL,
+    comentario TEXT NOT NULL,
+    valoracion INT  NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_com_coach   FOREIGN KEY (coach_id)   REFERENCES coaches(id),
+    CONSTRAINT fk_com_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 ```
 
 ---
 
-## 6.4 Usuario de aplicación
+## 6.3 Usuario de aplicación
 
 La aplicación nunca usa el usuario `root`. Se crea un usuario con permisos mínimos restringido a la red de base de datos:
 
