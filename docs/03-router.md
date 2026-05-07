@@ -24,13 +24,13 @@ net.ipv4.ip_forward=1
 
 El router aplica reglas NAT para redirigir el tráfico HTTP y HTTPS hacia el balanceador:
 
-| Regla | Tabla/Cadena | Efecto |
-|---|---|---|
-| DNAT puerto 80 (eth1) | nat / PREROUTING | Redirige HTTP desde la LAN al balanceador |
-| DNAT puerto 80 (eth0) | nat / PREROUTING | Redirige HTTP desde VirtualBox forwarded_port al balanceador |
-| DNAT puerto 443 (eth1) | nat / PREROUTING | Redirige HTTPS desde la LAN al balanceador |
-| DNAT puerto 443 (eth0) | nat / PREROUTING | Redirige HTTPS desde VirtualBox forwarded_port al balanceador |
-| MASQUERADE | nat / POSTROUTING | Enmascara la IP origen para acceso a Internet desde las VMs internas |
+| Regla | Interfaz | Puerto | Efecto |
+|---|---|---|---|
+| DNAT | eth1 | 80 | Redirige HTTP desde la LAN al balanceador |
+| DNAT | eth0 | 80 | Redirige HTTP desde VirtualBox forwarded_port al balanceador |
+| DNAT | eth1 | 443 | Redirige HTTPS desde la LAN al balanceador |
+| DNAT | eth0 | 443 | Redirige HTTPS desde VirtualBox forwarded_port al balanceador |
+| MASQUERADE | * | * | Permite acceso a Internet desde las VMs internas |
 
 ```bash
 # HTTP
@@ -45,23 +45,29 @@ iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destinatio
 iptables -t nat -A POSTROUTING -j MASQUERADE
 ```
 
-> **Persistencia:** Las reglas iptables son volátiles por defecto. Para hacerlas persistentes:
-> ```bash
-> apt install iptables-persistent
-> netfilter-persistent save
-> # Las reglas se guardan en /etc/iptables/rules.v4
-> ```
+---
+
+## 3.3 Persistencia de reglas
+
+Las reglas iptables son volátiles por defecto. Para hacerlas persistentes entre reinicios:
+
+```bash
+apt install iptables-persistent
+netfilter-persistent save
+# Las reglas se guardan en /etc/iptables/rules.v4
+```
+
+> **Nota importante:** El script de provisión del Vagrantfile limpia las reglas con `iptables -F` en cada arranque. Las reglas añadidas manualmente (especialmente las de `eth0`) deben volver a aplicarse tras cada `vagrant up` o almacenarse en el script de provisión.
 
 ---
 
-## 3.3 Verificación
+## 3.4 Verificación
 
 ```bash
-# Comprobar reglas activas
-iptables -t nat -L -n -v
-
-# La salida debe mostrar las reglas DNAT para los puertos 80 y 443
+sudo iptables -t nat -L -n -v
 ```
+
+La salida debe mostrar las cuatro reglas DNAT (dos para el puerto 80 y dos para el 443) y la regla MASQUERADE.
 
 ---
 
