@@ -20,6 +20,7 @@
 10. [Conclusiones](docs/10-conclusiones.md)
 11. [Código de la aplicación web](docs/11-codigo-web.md)
 12. [Exposición a Internet](docs/12-exposicion_internet.md)
+13. [Errores encontrados y soluciones](docs/13-errores-y-soluciones.md)
 
 ---
 
@@ -27,12 +28,13 @@
 
 **RuleTheGame.com** es una plataforma web de coaching para videojuegos profesionales, desarrollada como Trabajo de Fin de Grado del ciclo ASIR. La infraestructura se despliega íntegramente con **Vagrant + VirtualBox** y está compuesta por cinco máquinas virtuales Debian organizadas en tres redes segmentadas.
 
-| VM | Función |
-|---|---|
-| `router` | Puerta de enlace, NAT, iptables (HTTP + HTTPS) |
-| `balancer` | Nginx proxy inverso con round-robin + SSL |
-| `web1` / `web2` | Servidores web Apache + PHP (ficheros via NFS) |
-| `db` | MariaDB + servidor NFS |
+| VM | IP | Función |
+|---|---|---|
+| `router` | 192.168.10.1 / 172.16.0.1 | Puerta de enlace, NAT, iptables (HTTP + HTTPS) |
+| `balancer` | 172.16.0.10 | Nginx proxy inverso con round-robin + ip_hash + SSL |
+| `web1` | 172.16.0.21 / 10.0.0.21 | Apache + PHP (ficheros via NFS) |
+| `web2` | 172.16.0.22 / 10.0.0.22 | Apache + PHP (ficheros via NFS) |
+| `db` | 10.0.0.100 | MariaDB + servidor NFS |
 
 ---
 
@@ -43,7 +45,7 @@ Internet
     │
   Router (192.168.10.1 / 172.16.0.1)   ← NAT + iptables (80/443)
     │
-  Balancer (172.16.0.10)               ← Nginx proxy inverso + SSL
+  Balancer (172.16.0.10)               ← Nginx proxy inverso + SSL + ip_hash
    ┌──┴──┐
  WEB1   WEB2  (172.16.0.21 / .22)     ← Apache + PHP + NFS client
    └──┬──┘
@@ -52,11 +54,25 @@ Internet
 
 ---
 
+## Funcionalidades de la plataforma web
+
+- Sistema de registro e inicio de sesión con roles (`cliente`, `coach`, `admin`)
+- Búsqueda y filtrado de coaches por juego y nombre
+- Contratación de sesiones con fecha, hora, duración y notas
+- Gestión de sesiones: cancelación por el cliente, marcado como completada por el coach
+- Sistema de valoraciones y comentarios sobre coaches
+- Mensajería interna entre clientes y coaches con polling en tiempo real
+- Panel de administración con gestión de usuarios, coaches y sesiones
+- Edición de perfil para clientes y coaches
+- HTTPS con certificado autofirmado
+
+---
+
 ## Acceso a la plataforma
 
 | URL | Descripción |
 |---|---|
-| `https://192.168.10.1` | Acceso local a la plataforma |
+| `https://192.168.10.1` | Acceso local desde el host Windows |
 | `https://xxxx.trycloudflare.com` | Acceso público vía Cloudflare Tunnel |
 
 ---
