@@ -35,7 +35,7 @@
 │   ├── registro.css
 │   └── registro.js
 ├── perfil/
-│   ├── perfil.php                  # Perfil del cliente (edición + sesiones)
+│   ├── perfil.php                  # Perfil del cliente (edición + sesiones + incidencias)
 │   └── perfil.css
 ├── perfil_coach/
 │   ├── perfil_coach.php            # Perfil del coach (sesiones + comentarios + contratación)
@@ -49,6 +49,9 @@
 │   ├── mensajes.php                # Bandeja de mensajes
 │   ├── conversacion.php            # Chat individual con polling
 │   └── mensajes.css
+├── incidencias/
+│   ├── incidencias.php             # Formulario para abrir una incidencia
+│   └── mis_incidencias.php         # Lista de incidencias del usuario con estado
 ├── admin/
 │   ├── admin.php                   # Panel de administración
 │   └── admin.css
@@ -70,8 +73,8 @@ La aplicación distingue tres roles almacenados en el campo `rol` de la tabla `u
 
 | Rol | Acceso |
 |---|---|
-| `cliente` | Buscar coaches, contratar sesiones, valorar coaches, mensajería |
-| `coach` | Ver y gestionar sus sesiones, editar su perfil, mensajería |
+| `cliente` | Buscar coaches, contratar sesiones, valorar coaches, mensajería, incidencias |
+| `coach` | Ver y gestionar sus sesiones, editar su perfil, mensajería, incidencias |
 | `admin` | Acceso completo al panel de administración |
 
 Al iniciar sesión, el rol se guarda en la sesión PHP:
@@ -126,11 +129,12 @@ La conexión siempre usa el usuario `rtg_php` con permisos mínimos, nunca `root
 
 ## 11.5 Sistema de mensajería
 
-La mensajería interna usa **polling** en lugar de WebSockets para simplificar la implementación en el entorno Vagrant.
+La mensajería interna usa polling en lugar de WebSockets para simplificar la implementación en el entorno Vagrant.
 
-**Tabla `mensajes`:** `emisor_id`, `receptor_id`, `contenido`, `leido`, `created_at`.
+Tabla `mensajes`: `emisor_id`, `receptor_id`, `contenido`, `leido`, `created_at`.
 
 **Flujo:**
+
 1. El cliente envía un mensaje desde `perfil_coach.php` pulsando "Enviar mensaje".
 2. El mensaje se inserta en la tabla `mensajes` vía POST.
 3. `conversacion.php` muestra el historial de mensajes y ejecuta polling cada 3 segundos.
@@ -160,7 +164,8 @@ Con dos servidores web detrás del balanceador, las sesiones PHP pueden perderse
 
 **Solución aplicada:** directiva `ip_hash` en Nginx para que cada IP siempre vaya al mismo servidor web.
 
-**Configuración de la carpeta de sesiones:**
+Configuración de la carpeta de sesiones:
+
 ```bash
 # La carpeta sessions está en el NFS compartido
 sudo chmod 1777 /var/www/rulethegame/sessions
@@ -168,7 +173,8 @@ sudo chmod 1777 /var/www/html/sessions
 ```
 
 El `php.ini` de cada servidor web apunta las sesiones a esta carpeta compartida:
-```
+
+```ini
 session.save_path = /var/www/html/sessions
 ```
 
@@ -196,4 +202,48 @@ $ins->execute();
 
 ---
 
-[← Herramienta de gestión](07-herramienta-gestion.md) | [Siguiente → Exposición a Internet](12-exposicion_internet.md)
+## 11.8 Sistema de incidencias
+
+El sistema de incidencias permite a clientes y coaches reportar problemas al equipo de atención al cliente.
+
+Tabla `incidencias`: `usuario_id`, `rol`, `titulo`, `descripcion`, `estado`, `asignado_a`, `created_at`.
+
+**Flujo:**
+
+1. El usuario accede a "🎫 Mis incidencias" desde su perfil.
+2. Crea una nueva incidencia rellenando título y descripción en `incidencias.php`.
+3. La incidencia se inserta en MariaDB con estado `abierta` y el rol del usuario detectado automáticamente.
+4. El usuario puede ver el estado de sus incidencias en `mis_incidencias.php` con badges de color.
+5. El jefe de atención al cliente gestiona las incidencias desde HeidiSQL en el Windows Pro.
+
+**Estados de una incidencia:**
+
+| Estado | Color | Significado |
+|---|---|---|
+| `abierta` | 🟡 Amarillo | Recién creada, pendiente de asignar |
+| `en_curso` | 🔵 Azul | Asignada a un empleado |
+| `resuelta` | 🟢 Verde | Cerrada y solucionada |
+
+**Inserción de incidencia:**
+
+```php
+$stmt = $conn->prepare(
+    "INSERT INTO incidencias (usuario_id, rol, titulo, descripcion) VALUES (?, ?, ?, ?)"
+);
+$stmt->bind_param("isss", $usuario_id, $rol, $titulo, $descripcion);
+$stmt->execute();
+```
+
+**Consulta de incidencias del usuario:**
+
+```php
+$stmt = $conn->prepare(
+    "SELECT id, titulo, descripcion, estado, created_at
+     FROM incidencias WHERE usuario_id = ? ORDER BY created_at DESC"
+);
+$stmt->bind_param("i", $usuario_id);
+```
+
+---
+
+[← Herramienta de gestión](07-herramienta-gestion.md) | [→ Exposición a Internet](12-exposicion_internet.md) | [↑ Volver al índice](../README.md)
