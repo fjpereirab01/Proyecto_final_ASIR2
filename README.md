@@ -1,5 +1,4 @@
 # RuleTheGame.com — Memoria Técnica TFG ASIR
-
 **Administración de Sistemas Informáticos en Red (ASIR) · Curso 2024–2025**  
 **Autor:** F.J. Pereira Benito  
 **Infraestructura:** Vagrant + VirtualBox · Router · Nginx Balancer · WEB1 · WEB2 · MariaDB + NFS
@@ -21,6 +20,8 @@
 11. [Código de la aplicación web](docs/11-codigo-web.md)
 12. [Exposición a Internet](docs/12-exposicion_internet.md)
 13. [Errores encontrados y soluciones](docs/13-errores-y-soluciones.md)
+14. [Red Windows Server y acceso exclusivo a MariaDB](docs/14-red-windows-mariadb.md)
+15. [Sistema de incidencias](docs/15-incidencias.md)
 
 ---
 
@@ -34,7 +35,7 @@
 | `balancer` | 172.16.0.10 | Nginx proxy inverso con round-robin + ip_hash + SSL |
 | `web1` | 172.16.0.21 / 10.0.0.21 | Apache + PHP (ficheros via NFS) |
 | `web2` | 172.16.0.22 / 10.0.0.22 | Apache + PHP (ficheros via NFS) |
-| `db` | 10.0.0.100 | MariaDB + servidor NFS |
+| `db` | 10.0.0.100 / 192.168.50.100 | MariaDB + servidor NFS |
 
 ---
 
@@ -49,7 +50,9 @@ Internet
    ┌──┴──┐
  WEB1   WEB2  (172.16.0.21 / .22)     ← Apache + PHP + NFS client
    └──┬──┘
-     DB (10.0.0.100)                   ← MariaDB + NFS server
+     DB (10.0.0.100 / 192.168.50.100)  ← MariaDB + NFS server
+      │
+     Windows Pro (192.168.50.20)       ← HeidiSQL (gestión de incidencias)
 ```
 
 ---
@@ -64,7 +67,21 @@ Internet
 - Mensajería interna entre clientes y coaches con polling en tiempo real
 - Panel de administración con gestión de usuarios, coaches y sesiones
 - Edición de perfil para clientes y coaches
+- Sistema de incidencias: creación desde la web, gestión desde HeidiSQL
 - HTTPS con certificado autofirmado
+
+---
+
+## Entorno Windows (Active Directory)
+
+El proyecto incluye un entorno Windows integrado con la infraestructura Vagrant:
+
+| VM | IP | Función |
+|---|---|---|
+| Windows Server 2016 | `192.168.50.10` | Controlador de dominio `rulethegame.com` |
+| Windows Pro (PC-JEFE-AC) | `192.168.50.20` | Equipo del jefe de atención al cliente |
+
+El Windows Pro tiene acceso exclusivo a MariaDB vía HeidiSQL para gestionar las incidencias de los usuarios.
 
 ---
 
