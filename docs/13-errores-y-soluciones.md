@@ -92,6 +92,78 @@ sudo chmod 1777 /var/www/rulethegame/sessions
 
 ---
 
+### Error: Las reglas FORWARD del router bloqueaban el tráfico HTTP/HTTPS
+
+**Síntoma:** La web dejó de ser accesible desde el host. El curl a `192.168.10.1` daba timeout aunque el ping funcionaba y las reglas DNAT estaban correctas.
+
+**Causa:** La política por defecto de la cadena FORWARD era `DROP`. Las reglas DNAT redirigían el tráfico correctamente pero las reglas FORWARD no permitían explícitamente el paso entre `eth1` (LAN) y `eth2` (DMZ), por lo que los paquetes eran descartados después del DNAT.
+
+**Solución:** Añadir reglas FORWARD explícitas en el router:
+```bash
+sudo iptables -A FORWARD -i eth1 -o eth2 -j ACCEPT
+sudo iptables -A FORWARD -i eth2 -o eth1 -m state --state RELATED,ESTABLISHED -j ACCEPT
+sudo netfilter-persistent save
+```
+
+Estas reglas se añadieron también al script `provision_router.sh` para que persistan tras reinicios.
+
+---
+
+### Error: MariaDB no aceptaba conexiones desde la red 192.168.50.x
+
+**Síntoma:** HeidiSQL desde Windows Pro no podía conectar a `192.168.50.100:3306`. El ping funcionaba pero la conexión TCP al puerto 3306 era rechazada.
+
+**Causa:** El `bind-address` de MariaDB estaba fijado a `10.0.0.100`, por lo que solo escuchaba en la interfaz de la red Vagrant y rechazaba conexiones desde la interfaz `eth2` (`192.168.50.100`).
+
+**Solución:** Cambiar el `bind-address` a `0.0.0.0` para escuchar en todas las interfaces:
+```bash
+sudo sed -i 's/bind-address = 10.0.0.100/bind-address = 0.0.0.0/' \
+    /etc/mysql/mariadb.conf.d/50-server.cnf
+sudo systemctl restart mariadb
+```
+
+---
+
+### Error: web1/web2 no podían conectar a MariaDB tras añadir reglas iptables
+
+**Síntoma:** La web daba 504 Gateway Time-out. PHP se quedaba colgado al intentar conectar a la BD. `nc -zv 10.0.0.100 3306` no respondía desde web1.
+
+**Causa:** Al añadir las reglas iptables para el acceso exclusivo desde el Windows Pro, se añadió una regla `DROP` para el puerto 3306 que bloqueaba también a web1 y web2, ya que la regla de ACCEPT para `192.168.50.20` se insertó después del DROP.
+
+**Solución:** Insertar la regla de ACCEPT para la red interna de Vagrant en primera posición, antes del DROP:
+```bash
+sudo iptables -I INPUT 1 -p tcp --dport 3306 -s 10.0.0.0/24 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+---
+
+### Error: Ruta por defecto incorrecta en el PC anfitrión bloqueaba el tráfico
+
+**Síntoma:** El curl a `192.168.10.1` fallaba aunque la ruta hacia `172.16.0.0/24` estaba configurada correctamente.
+
+**Causa:** Al añadir la interfaz host-only `192.168.50.x` a VirtualBox para la red Windows, se creó automáticamente un adaptador virtual en el PC anfitrión con una ruta por defecto incorrecta (`0.0.0.0 → 172.16.2.1`) que interfería con el tráfico.
+
+**Solución:** Eliminar la ruta falsa desde PowerShell como administrador:
+```powershell
+route delete 0.0.0.0 mask 0.0.0.0 172.16.2.1
+```
+
+---
+
+### Error: Windows Pro y Windows Server no se comunicaban
+
+**Síntoma:** El ping entre `192.168.50.20` y `192.168.50.10` fallaba aunque ambos estaban en la misma red interna `windows` de VirtualBox.
+
+**Causa:** El Windows Server tenía el firewall activado para todos los perfiles (Domain, Public, Private), bloqueando el tráfico ICMP y TCP entrante desde el Windows Pro.
+
+**Solución:** Desactivar el firewall en el Windows Server (para entorno de laboratorio):
+```powershell
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+```
+
+---
+
 ## 13.2 Aplicación web PHP
 
 ### Error: `Call to undefined function mb_strlen()`
@@ -234,4 +306,4 @@ sudo apt install default-mysql-client -y
 
 ---
 
-[← Exposición a Internet](12-exposicion_internet.md) | [↑ Volver al índice](../README.md)
+[← Exposición a Internet](12-exposicion_internet.md) | [→ Red Windows y MariaDB](14-red-windows-mariadb.md) | [↑ Volver al índice](../README.md)
