@@ -8,7 +8,7 @@ Motor: **MariaDB** · Nombre de la BD: `proyecto_asir`
 
 ## 6.1 Tablas implementadas
 
-La base de datos cuenta con 5 tablas activas que soportan todas las funcionalidades de la plataforma:
+La base de datos cuenta con 6 tablas activas que soportan todas las funcionalidades de la plataforma:
 
 | Tabla | Función |
 |---|---|
@@ -17,6 +17,7 @@ La base de datos cuenta con 5 tablas activas que soportan todas las funcionalida
 | `sesiones` | Registro de cada contratación de coaching |
 | `comentarios` | Valoraciones de clientes sobre coaches |
 | `mensajes` | Mensajería interna entre usuarios |
+| `notificaciones` | Notificaciones automáticas de sesiones próximas |
 
 ---
 
@@ -98,6 +99,19 @@ Sistema de mensajería interna entre usuarios.
 | leido | TINYINT | DEFAULT 0 | 0 = no leído, 1 = leído |
 | created_at | TIMESTAMP | DEFAULT NOW() | Fecha de envío |
 
+### notificaciones
+
+Almacena las notificaciones automáticas generadas cuando una sesión está próxima a comenzar. La clave única `uq_notif` impide generar duplicados para el mismo usuario y sesión.
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | INT | PK, AUTO_INCREMENT | Identificador único |
+| usuario_id | INT | FK → usuarios.id | Usuario que recibe la notificación |
+| sesion_id | INT | FK → sesiones.id | Sesión a la que hace referencia |
+| mensaje | TEXT | NOT NULL | Texto de la notificación |
+| leida | TINYINT | DEFAULT 0 | 0 = no leída, 1 = leída |
+| created_at | TIMESTAMP | DEFAULT NOW() | Fecha de creación |
+
 ---
 
 ## 6.3 Script SQL de creación
@@ -176,6 +190,19 @@ CREATE TABLE mensajes (
     PRIMARY KEY (id),
     CONSTRAINT fk_msg_emisor   FOREIGN KEY (emisor_id)   REFERENCES usuarios(id),
     CONSTRAINT fk_msg_receptor FOREIGN KEY (receptor_id) REFERENCES usuarios(id)
+);
+
+CREATE TABLE notificaciones (
+    id         INT  NOT NULL AUTO_INCREMENT,
+    usuario_id INT  NOT NULL,
+    sesion_id  INT  NOT NULL,
+    mensaje    TEXT NOT NULL,
+    leida      TINYINT  DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_notif_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+    CONSTRAINT fk_notif_sesion  FOREIGN KEY (sesion_id)  REFERENCES sesiones(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_notif (usuario_id, sesion_id)
 );
 ```
 
