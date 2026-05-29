@@ -15,8 +15,8 @@
 La web se sirve desde la máquina `db` vía NFS y es montada por `web1` y `web2`. El tráfico externo entra por el router, que lo redirige al balanceador, y este distribuye las peticiones entre los dos servidores web.
 
 ```
-Internet → Cloudflare Tunnel → localhost:80 (host Windows)
-        → router VM (iptables DNAT) → balancer (Nginx)
+Internet → ngrok → localhost:8443 (host Windows)
+        → balancer VM (Nginx, puerto 443)
         → web1 / web2 (Apache + PHP) → db (MariaDB + NFS)
 ```
 
@@ -25,47 +25,83 @@ Internet → Cloudflare Tunnel → localhost:80 (host Windows)
 ## Requisitos previos
 
 - Vagrant + VirtualBox instalados en el host Windows
-- Fichero `hosts` de Windows configurado (ver paso 2)
-- iPhone u otro dispositivo con datos móviles para hacer de hotspot (necesario para saltar las restricciones de red del instituto)
-- Ejecutable `cloudflared-windows-amd64.exe` descargado desde [github.com/cloudflare/cloudflared/releases](https://github.com/cloudflare/cloudflared/releases)
+- Cuenta gratuita en [ngrok.com](https://ngrok.com) con authtoken configurado
+- ngrok instalado en el host Windows ([ngrok.com/download](https://ngrok.com/download))
 
 ---
 
 ## Paso 1 — Modificar el Vagrantfile
 
-Añadir un `forwarded_port` en la sección del router para exponer el puerto 80 de la VM en el puerto 80 del host Windows:
+Añadir un `forwarded_port` en la sección del balancer para exponer el puerto 443 de la VM en el puerto 8443 del host Windows:
 
 ```ruby
-config.vm.define "router" do |router|
-  router.vm.box      = "debian/bullseye64"
-  router.vm.hostname = "router-asir"
-  router.vm.network "private_network", ip: "192.168.10.1"
-  router.vm.network "private_network", virtualbox__intnet: "intnet_dmz", ip: "172.16.0.1"
-  router.vm.network "forwarded_port", guest: 80, host: 80   # ← AÑADIR
-  router.vm.provision "shell", path: "provision_router.sh"
+config.vm.define "balancer" do |lb|
+  lb.vm.box      = "debian/bullseye64"
+  lb.vm.hostname = "balanceador"
+  lb.vm.network "private_network", virtualbox__intnet: "intnet_dmz", ip: "172.16.0.10"
+  lb.vm.network "forwarded_port", guest: 443, host: 8443   # ← AÑADIR
+  lb.vm.provision "shell", path: "provision_balancer.sh"
 end
 ```
 
----
+Recargar la VM del balancer para aplicar el cambio:
 
-## Paso 2 — Configurar el fichero hosts de Windows
-
-La web tiene enlaces internos que apuntan a `http://192.168.10.1` (IP del router). Para que el navegador del host pueda resolver esa IP correctamente, hay que añadirla al fichero hosts.
-
-1. Abrir **Bloc de notas como administrador**
-2. Abrir el fichero: `C:\Windows\System32\drivers\etc\hosts`
-3. Cambiar el tipo de archivo a **"Todos los archivos"** si no aparece
-4. Añadir al final:
-
+```bash
+vagrant reload balancer
 ```
-127.0.0.1    192.168.10.1
-```
-
-5. Guardar con **Ctrl+S**
 
 ---
 
-## Paso 3 — Arrancar las máquinas en orden
+## Paso 2 — Corregir las URLs internas de la web
+
+Las URLs del código PHP apuntaban a `https://192.168.10.1/...`, una IP solo accesible en la red local de Vagrant. Para que la web funcione desde cualquier dominio externo (ngrok u otro), se convierten a **rutas relativas** eliminando el dominio:
+
+```bash
+vagrant ssh db -c "sudo grep -rl 'https://192.168.10.1' /var/www/rulethegame/ | xargs sudo sed -i 's|https://192.168.10.1||g'"
+```
+
+Esto convierte por ejemplo:
+- `https://192.168.10.1/coaches/coaches.php` → `/coaches/coaches.php`
+- `https://192.168.10.1/logout.php` → `/logout.php`
+
+Con rutas relativas, los enlaces funcionan independientemente del dominio desde el que se acceda.
+
+---
+
+## Paso 3 — Configurar ngrok
+
+### 3.1 Registrar el authtoken
+
+Tras crear la cuenta en ngrok.com, obtener el authtoken desde [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) y registrarlo en el sistema:
+
+```powershell
+ngrok config add-authtoken TU_AUTHTOKEN
+```
+
+El token se guarda en `C:\Users\<usuario>\AppData\Local\ngrok\ngrok.yml`.
+
+### 3.2 Lanzar el túnel
+
+Con las VMs corriendo, abrir PowerShell y ejecutar:
+
+```powershell
+ngrok http https://localhost:8443 --host-header=rewrite
+```
+
+La salida mostrará la URL pública generada:
+
+```
+Session Status    online
+Account           usuario@email.com (Plan: Free)
+Region            Europe (eu)
+Forwarding        https://xxxx-xxxx-xxxx.ngrok-free.app -> https://localhost:8443
+```
+
+La línea `Forwarding` confirma que el túnel está activo y muestra la URL pública.
+
+---
+
+## Paso 4 — Arrancar las máquinas en orden
 
 Es obligatorio arrancar `db` primero porque `web1` y `web2` montan su sistema de ficheros vía NFS desde ella:
 
@@ -80,80 +116,23 @@ Esperar a que cada comando finalice antes de ejecutar el siguiente.
 
 ---
 
-## Paso 4 — Añadir regla iptables en eth0 del router
-
-El script de provisión del router solo añade la regla DNAT para `eth1`. Como el tráfico del `forwarded_port` de VirtualBox llega por `eth0`, hay que añadir la regla manualmente:
-
-```bash
-vagrant ssh router -c "sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 -j DNAT --to-destination 172.16.0.10:80 && sudo netfilter-persistent save"
-```
-
-> **Nota:** Esta regla se debe añadir cada vez que se reinicie la VM del router, ya que `netfilter-persistent` la guarda pero el script de provisión vuelve a limpiar las reglas con `iptables -F`.
-
-### Verificar que las reglas están activas
-
-```bash
-vagrant ssh router -c "sudo iptables -t nat -L -n -v"
-```
-
-La salida debe mostrar dos reglas DNAT: una para `eth1` y otra para `eth0`, ambas redirigiendo al balanceador (`172.16.0.10:80`).
-
----
-
 ## Paso 5 — Verificar funcionamiento local
 
-Antes de exponer a internet, comprobar que la web carga correctamente desde el host:
+Antes de exponer a internet, comprobar que la web carga correctamente desde el host accediendo al puerto forwardeado:
 
 ```
-http://192.168.10.1
+https://localhost:8443
 ```
 
-Si carga el RuleTheGame, todo está correcto.
+Si carga RuleTheGame, el port forwarding está correcto.
 
 ---
 
-## Paso 6 — Conectar el iPhone como hotspot
+## Paso 6 — Compartir la URL
 
-La red del instituto bloquea los puertos necesarios para Cloudflare Tunnel (UDP para QUIC y TCP 7844 para HTTP2). Para evitarlo:
+La URL pública generada (formato `https://xxxx.ngrok-free.app`) es accesible desde cualquier dispositivo con conexión a internet. Al acceder por primera vez, ngrok muestra una pantalla de aviso indicando que el sitio se sirve gratuitamente a través de ngrok. El visitante debe hacer clic en **"Visit Site"** para continuar. Esta pantalla solo aparece una vez por sesión.
 
-1. Activar el **Punto de Acceso Personal** en el iPhone
-2. Conectar el PC Windows a esa red WiFi
-3. Verificar que hay conexión a internet desde el PC
-
----
-
-## Paso 7 — Lanzar Cloudflare Tunnel
-
-Abrir PowerShell en la carpeta donde está el ejecutable y ejecutar:
-
-```powershell
-.\cloudflared-windows-amd64.exe tunnel --protocol http2 --url http://127.0.0.1:80
-```
-
-> Se usa `127.0.0.1` en lugar de `localhost` para forzar IPv4, ya que VirtualBox solo escucha en IPv4 y `localhost` en Windows puede resolver a IPv6 (`::1`).
-
-> Se usa `--protocol http2` en lugar de QUIC porque la red del instituto bloquea el tráfico UDP.
-
-La salida mostrará la URL pública generada:
-
-```
-+--------------------------------------------------------------------------------------------+
-|  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
-|  https://xxxx-xxxx-xxxx-xxxx.trycloudflare.com                                             |
-+--------------------------------------------------------------------------------------------+
-...
-INF Registered tunnel connection connIndex=0 ... location=mad05 protocol=http2
-```
-
-La línea `Registered tunnel connection` confirma que el túnel está activo.
-
----
-
-## Paso 8 — Compartir la URL
-
-La URL pública generada (formato `https://xxxx.trycloudflare.com`) es accesible desde cualquier dispositivo con conexión a internet: otros equipos del instituto, móviles, etc.
-
-> **Importante:** La URL cambia cada vez que se reinicia el túnel. Compartirla justo antes de la demo.
+> **Importante:** La URL cambia cada vez que se reinicia ngrok. Compartirla justo antes de la demo.
 
 > **Importante:** No cerrar la ventana de PowerShell mientras el túnel deba estar activo.
 
@@ -165,16 +144,13 @@ La URL pública generada (formato `https://xxxx.trycloudflare.com`) es accesible
 # 1. Arrancar VMs en orden
 vagrant up db && vagrant up web1 web2 && vagrant up balancer && vagrant up router
 
-# 2. Añadir regla iptables en eth0 del router
-vagrant ssh router -c "sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 -j DNAT --to-destination 172.16.0.10:80 && sudo netfilter-persistent save"
+# 2. Verificar que la web carga en local
+# Abrir en el navegador: https://localhost:8443
 
-# 3. Verificar que la web carga en local
-# Abrir en el navegador: http://192.168.10.1
+# 3. Lanzar ngrok (en PowerShell)
+ngrok http https://localhost:8443 --host-header=rewrite
 
-# 4. Conectar el iPhone como hotspot
-
-# 5. Lanzar el túnel (en PowerShell)
-.\cloudflared-windows-amd64.exe tunnel --protocol http2 --url http://127.0.0.1:80
+# 4. Compartir la URL pública que aparece en la terminal
 ```
 
 ---
@@ -183,8 +159,8 @@ vagrant ssh router -c "sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport
 
 | Problema | Causa | Solución |
 |---|---|---|
-| `localhost:8080` da página vacía | El HTML tiene enlaces a `192.168.10.1` que el navegador no puede resolver | Añadir `127.0.0.1 192.168.10.1` al fichero hosts y usar puerto 80 |
-| Cloudflare Tunnel no conecta (timeout QUIC) | El instituto bloquea UDP | Usar `--protocol http2` |
-| Cloudflare Tunnel no conecta (timeout TCP) | El instituto bloquea el puerto 7844 | Usar el iPhone como hotspot |
-| 502 Bad Gateway en la URL de Cloudflare | `localhost` resuelve a IPv6 pero VirtualBox escucha en IPv4 | Usar `http://127.0.0.1:80` en lugar de `http://localhost:80` |
-| DNAT solo funciona desde dentro de la red | La regla iptables solo aplica a `eth1` | Añadir regla adicional para `eth0` manualmente |
+| `ERR_NGROK_3200` — endpoint offline | Las VMs no estaban corriendo o ngrok apuntaba a una IP inaccesible | Verificar `vagrant status` y usar `localhost:8443` en lugar de `192.168.10.1` |
+| Links de la web no funcionan desde ngrok | Las URLs del PHP apuntaban a `192.168.10.1` (IP local de Vagrant) | Reemplazar todas las URLs absolutas por rutas relativas con `sed` |
+| Pantalla de aviso de ngrok al acceder | ngrok muestra advertencia en plan gratuito la primera vez | Es normal, hacer clic en "Visit Site" para continuar |
+| Puerto 443 no accesible desde el host | El Vagrantfile no tenía `forwarded_port` para el balancer | Añadir `lb.vm.network "forwarded_port", guest: 443, host: 8443` y recargar |
+| Autenticación fallida al lanzar ngrok | No se había configurado el authtoken | Ejecutar `ngrok config add-authtoken TU_AUTHTOKEN` |
