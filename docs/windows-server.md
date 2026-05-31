@@ -1,115 +1,397 @@
-# Windows Server — Integración y Seguridad
+# 🖥️ Windows Server — Dominio RuleTheGame
+
+**Proyecto:** RuleTheGame.com — Plataforma de coaching gaming  
+**Titular:** Francisco Javier Pereira Benito  
+**Dominio:** `rulethegame.com`  
+**IP del servidor:** `192.168.50.10`  
+
+---
+
+## Índice
+
+1. [Descripción](#descripción)
+2. [Estructura del dominio](#estructura-del-dominio)
+3. [Instalación del dominio (AD DS)](#instalación-del-dominio-ad-ds)
+4. [Unidades Organizativas (OUs)](#unidades-organizativas-ous)
+5. [DHCP](#dhcp)
+6. [Enlazar equipos al dominio](#enlazar-equipos-al-dominio)
+7. [Usuarios y grupos](#usuarios-y-grupos)
+8. [Políticas de grupo (GPOs)](#políticas-de-grupo-gpos)
+9. [Perfiles móviles](#perfiles-móviles)
+
+---
 
 ## Descripción
 
-Se ha añadido una máquina virtual Windows Server a la infraestructura del proyecto. El objetivo es que tenga salida a internet a través del router Vagrant, pero que no sea accesible desde el exterior ni desde la DMZ, protegiéndola de posibles ataques dirigidos a la web o al balanceador.
+La empresa **Rule The Game** actúa de intermediario entre coaches de videojuegos y clientes que quieren mejorar su nivel competitivo. Dispone de una página web enlazada a una base de datos que recoge los coaches disponibles, sus tarifas y disponibilidad. El Windows Server gestiona la infraestructura interna de la empresa: usuarios, equipos, permisos y políticas.
 
 ---
 
-## Topología
+## Estructura del dominio
 
-```
-Internet
-   |
- [Router Vagrant]
-   |          |
- [DMZ]      [LAN 192.168.10.0/24]
-   |              |
-[Balanceador]  [Windows Server 192.168.10.50]
-[Web1 / Web2]
-[Base de datos]
-```
+La empresa está organizada en **7 departamentos**, cada uno representado como una OU:
 
-El Windows Server se conecta a la red LAN interna (`192.168.10.0/24`) mediante un adaptador **Host-Only** de VirtualBox (`VirtualBox Host-Only Ethernet Adapter #4`), la misma red donde el router tiene la IP `192.168.10.1`.
+| Departamento | Descripción |
+|---|---|
+| Dirección | Directivos y CEO |
+| RRHH | Recursos Humanos |
+| Ventas | Equipo comercial |
+| Marketing | Diseño y comunicación |
+| Administración | Gestión contable y administrativa |
+| Informática | Soporte técnico y sistemas |
+| Atención al cliente | Soporte y atención a usuarios |
+
+> Existe además un **grupo especial** compuesto por los directivos y los jefes de cada departamento, con permisos elevados.
 
 ---
 
-## Configuración de red del Windows Server
+## Instalación del dominio (AD DS)
+
+1. Abrir **Administrador del servidor** → *Agregar roles y características*
+2. En *Roles del servidor* seleccionar **Servicios de dominio de Active Directory**
+3. Completar la instalación y hacer clic en el aviso amarillo → *Configuración posterior a la implementación*
+4. Seleccionar **Agregar un nuevo bosque** e introducir el nombre del dominio:
+
+```
+rulethegame.com
+```
+
+5. Tras reiniciar, abrir **Usuarios y equipos de Active Directory** desde el buscador de Windows.
+
+---
+
+## Unidades Organizativas (OUs)
+
+Para crear cada OU: clic derecho sobre el dominio → **Nuevo** → **Unidad organizativa**
+
+```
+rulethegame.com
+├── Administracion
+├── Atencion al cliente
+├── Direccion
+├── Informatica
+├── Marketing
+├── RRHH
+└── Ventas
+```
+
+---
+
+## DHCP
+
+### Instalación del rol
+
+1. **Administrador del servidor** → *Agregar roles y características*
+2. Seleccionar **Servidor DHCP**
+3. Tras instalar, completar la configuración desde el aviso amarillo
+
+### Configuración del ámbito
 
 | Parámetro | Valor |
-|-----------|-------|
-| IP | `192.168.10.50` |
-| Máscara | `255.255.255.0` |
-| Gateway | `192.168.10.1` |
-| DNS | `8.8.8.8` |
+|---|---|
+| Nombre del ámbito | `Red_Corporativa_RTG` |
+| Red | `192.168.50.0/24` |
+| Rango de distribución | `192.168.50.50` – `192.168.50.200` |
+| Máscara de subred | `255.255.255.0` |
+| Puerta de enlace (opción 003) | `192.168.50.1` |
+| DNS (opción 006) | `192.168.50.10` |
+| Sufijo DNS (opción 015) | `rulethegame.com` |
+| Duración de concesión | 8 días |
 
-El tráfico de salida a internet pasa por el router Vagrant, que aplica NAT hacia `eth0`.
+### Exclusiones (IPs estáticas reservadas)
 
----
+| IP | Dispositivo |
+|---|---|
+| `192.168.50.10` | Windows Server (DC) |
+| `192.168.50.20` | PC-JEFE-AC (Windows Pro) |
+| `192.168.50.100` | DB VM (MariaDB) |
 
-## Reglas iptables en el Router
+### Activar el ámbito por PowerShell
 
-Se detectó que la chain FORWARD tenía **policy ACCEPT** y estaba vacía, lo que permitía tráfico libre entre todas las redes. Se aplicaron las siguientes reglas para restringir el tráfico:
+```powershell
+Add-DhcpServerv4Scope -Name "Red_Corporativa_RTG" `
+    -StartRange 192.168.50.50 `
+    -EndRange 192.168.50.200 `
+    -SubnetMask 255.255.255.0 `
+    -State Active
 
-```bash
-# Vaciar reglas anteriores
-sudo iptables -F FORWARD
+Set-DhcpServerv4OptionValue `
+    -ScopeId 192.168.50.0 `
+    -Router 192.168.50.1 `
+    -DnsServer 192.168.50.10 `
+    -DnsDomain "rulethegame.com"
 
-# Política por defecto: denegar todo tráfico entre redes
-sudo iptables -P FORWARD DROP
+Add-DhcpServerv4ExclusionRange `
+    -ScopeId 192.168.50.0 `
+    -StartRange 192.168.50.10 `
+    -EndRange 192.168.50.20
 
-# Permitir tráfico de conexiones ya establecidas o relacionadas
-sudo iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-# Permitir DMZ → internet
-sudo iptables -A FORWARD -i eth2 -o eth0 -j ACCEPT
-
-# Permitir LAN → internet
-sudo iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
+Add-DhcpServerv4ExclusionRange `
+    -ScopeId 192.168.50.0 `
+    -StartRange 192.168.50.100 `
+    -EndRange 192.168.50.100
 ```
 
-### ¿Por qué así?
+---
 
-- La política `DROP` por defecto bloquea cualquier tráfico entre redes que no esté explícitamente permitido.
-- La regla `ESTABLISHED,RELATED` permite que las respuestas a conexiones iniciadas desde la LAN o DMZ hacia internet vuelvan correctamente.
-- No se añade ninguna regla que permita DMZ → LAN, por lo que el balanceador o los servidores web no pueden iniciar conexiones hacia el Windows Server.
+## Enlazar equipos al dominio
+
+El equipo cliente debe estar en la **misma red** que el servidor y apuntar a él como DNS.
+
+| Parámetro | Valor |
+|---|---|
+| IP | (dentro del rango DHCP o estática) |
+| Máscara | `255.255.255.0` |
+| Puerta de enlace | `192.168.50.1` |
+| DNS | `192.168.50.10` |
+
+**Pasos:**
+
+1. Panel de control → Sistema → *Cambiar configuración*
+2. Pestaña *Nombre de equipo* → **Cambiar** → marcar *Dominio*
+3. Introducir: `rulethegame.com`
+4. Autenticarse con credenciales de administrador del dominio
+5. Reiniciar el equipo
 
 ---
 
-## Reglas de entrada en Windows Defender Firewall
+## Usuarios y grupos
 
-Se descubrió que aunque las iptables del router bloqueaban el tráfico entre redes, el balanceador podía seguir llegando al Windows Server a través de la red NAT interna de VirtualBox (`10.0.2.x`), que es compartida por todas las VMs de Vagrant y no pasa por el router.
+Cada OU contiene los empleados de su departamento. Todos los usuarios de un mismo departamento pertenecen a un **grupo** con el nombre del departamento para facilitar la gestión de permisos.
 
-Para solucionar esto se configuraron dos reglas en **Windows Defender Firewall con seguridad avanzada → Reglas de entrada**:
+### Empleados por departamento
 
-### Regla 1: Permitir LAN interna
+| Departamento | Empleados |
+|---|---|
+| **Dirección** | Elena Prieto, Julian Ortega, Maria Gonzalez, Ricardo Montes, Sofia Hernandez, Tomas Aguilar |
+| **RRHH** | Ana Torres, Pedro Gomez |
+| **Ventas** | Carlos Ramos, Lucia Benitez, Mario Silva |
+| **Marketing** | Clara Ruiz, Nestor Valdez |
+| **Administración** | Esteban Moya, Laura Jimenez, Pablo Muñoz, Rocio Vega |
+| **Informática** | Luis Navarro |
+| **Atención al cliente** | Antonio Gonzalez, Sandra Rios |
 
-| Campo | Valor |
-|-------|-------|
-| Tipo | Personalizada |
-| Programa | Todos |
-| Protocolo | Cualquiera |
-| IP remota | `192.168.10.0/24` |
-| Acción | Permitir la conexión |
-| Perfil | Dominio, Privado, Público |
-| Nombre | `Permitir LAN interna` |
+### Patrón de usuario y contraseña
 
-### Regla 2: Bloquear todo lo demás
+- **Usuario:** `[inicial_nombre][apellido][número]` → ej: `eprieto42`
+- **Contraseña temporal:** `A_123456789_[usuario]` → ej: `A_123456789_eprieto42`
+- El usuario **debe cambiar la contraseña** en el primer inicio de sesión
 
-| Campo | Valor |
-|-------|-------|
-| Tipo | Personalizada |
-| Programa | Todos |
-| Protocolo | Cualquiera |
-| IP remota | `0.0.0.0/1` y `128.0.0.0/1` |
-| Acción | Bloquear la conexión |
-| Perfil | Dominio, Privado, Público |
-| Nombre | `Bloquear todo externo` |
+### Script PowerShell — Crear todos los usuarios
 
-> **Nota:** Windows Firewall no acepta la notación `0.0.0.0/0`. Se usan `0.0.0.0/1` y `128.0.0.0/1` que juntas cubren todo el rango de IPs posibles.
+```powershell
+Import-Module ActiveDirectory
 
-### ¿Por qué así?
+$Personal = @{
+    "Direccion" = @{
+        OU = "OU=Direccion,DC=rulethegame,DC=com"
+        Nombres = @("Elena Prieto","Julian Ortega","Maria Gonzalez","Ricardo Montes","Sofia Hernandez","Tomas Aguilar")
+    }
+    "RRHH" = @{
+        OU = "OU=RRHH,DC=rulethegame,DC=com"
+        Nombres = @("Ana Torres","Pedro Gomez")
+    }
+    "Ventas" = @{
+        OU = "OU=Ventas,DC=rulethegame,DC=com"
+        Nombres = @("Carlos Ramos","Lucia Benitez","Mario Silva")
+    }
+    "Marketing" = @{
+        OU = "OU=Marketing,DC=rulethegame,DC=com"
+        Nombres = @("Clara Ruiz","Nestor Valdez")
+    }
+    "Administracion" = @{
+        OU = "OU=Administracion,DC=rulethegame,DC=com"
+        Nombres = @("Esteban Moya","Laura Jimenez","Pablo Muñoz","Rocio Vega")
+    }
+    "Informatica" = @{
+        OU = "OU=Informatica,DC=rulethegame,DC=com"
+        Nombres = @("Luis Navarro")
+    }
+    "Atencion_Cliente" = @{
+        OU = "OU=AtencionCliente,DC=rulethegame,DC=com"
+        Nombres = @("Antonio Gonzalez","Sandra Rios")
+    }
+}
 
-- Windows Firewall aplica primero las reglas de **permitir** antes que las de **bloquear**, por lo que la LAN siempre tendrá acceso aunque exista la regla de bloqueo global.
-- Esto garantiza que aunque el tráfico llegue por cualquier interfaz (incluida la red NAT de VirtualBox), solo las IPs de la LAN interna podrán comunicarse con el Windows Server.
+foreach ($Departamento in $Personal.Keys) {
+    $Info    = $Personal[$Departamento]
+    $OUPath  = $Info.OU
+    $Nombres = $Info.Nombres
+
+    foreach ($NombreCompleto in $Nombres) {
+        $Partes   = $NombreCompleto.Split(" ")
+        $Nombre   = $Partes[0]
+        $Apellido = $Partes[1]
+        $Base     = "$($Nombre[0])$($Apellido)".ToLower()
+        $Unico    = $false
+
+        do {
+            $Num            = Get-Random -Minimum 10 -Maximum 99
+            $SamAccountName = "$Base$Num"
+            try { Get-ADUser -Identity $SamAccountName -ErrorAction Stop | Out-Null }
+            catch { $Unico = $true }
+        } while (-not $Unico)
+
+        $Pass = "A_123456789_$SamAccountName" | ConvertTo-SecureString -AsPlainText -Force
+
+        New-ADUser `
+            -Name            $NombreCompleto `
+            -SamAccountName  $SamAccountName `
+            -GivenName       $Nombre `
+            -Surname         $Apellido `
+            -Path            $OUPath `
+            -AccountPassword $Pass `
+            -Department      $Departamento `
+            -UserPrincipalName "$SamAccountName@rulethegame.com" `
+            -ChangePasswordAtLogon $true `
+            -Enabled         $true
+
+        Write-Host "[OK] $NombreCompleto | $SamAccountName" -ForegroundColor Green
+    }
+}
+```
+
+### Script PowerShell — Añadir un nuevo empleado
+
+```powershell
+$nombre   = Read-Host "Nombre"
+$apellido = Read-Host "Apellido"
+$ou       = Read-Host "Ruta OU (ej: OU=Ventas,DC=rulethegame,DC=com)"
+
+$base = "$($nombre[0])$($apellido)".ToLower()
+for ($i = 1; $i -le 99; $i++) {
+    $username = "$base$('{0:D2}' -f $i)"
+    if (-not (Get-ADUser -Filter { SamAccountName -eq $username } -ErrorAction SilentlyContinue)) { break }
+}
+
+$password = "A123456789_$username"
+New-ADUser `
+    -Name              "$nombre $apellido" `
+    -SamAccountName    $username `
+    -GivenName         $nombre `
+    -Surname           $apellido `
+    -Path              $ou `
+    -AccountPassword   (ConvertTo-SecureString $password -AsPlainText -Force) `
+    -UserPrincipalName "$username@rulethegame.com" `
+    -ChangePasswordAtLogon $true `
+    -Enabled           $true
+
+Write-Host "Usuario: $username | Contraseña: $password" -ForegroundColor Green
+```
 
 ---
 
-## Resultado final
+## Políticas de grupo (GPOs)
 
-| Origen | Destino | Resultado |
-|--------|---------|-----------|
-| Windows Server | Internet | ✅ Permitido |
-| LAN `192.168.10.x` | Windows Server | ✅ Permitido |
-| DMZ `172.16.0.x` | Windows Server | ❌ Bloqueado |
-| Internet | Windows Server | ❌ Bloqueado |
+### Vincular GPOs de dominio (script automático)
+
+```powershell
+Import-Module GroupPolicy
+$domainDN = (Get-ADDomain).DistinguishedName
+$gpos     = Get-GPO -All | Where-Object { $_.DisplayName -like "*DOMINIO*" }
+
+foreach ($gpo in $gpos) {
+    New-GPLink -Name $gpo.DisplayName -Target $domainDN -Enforced Yes
+    Write-Host "Vinculada: $($gpo.DisplayName)" -ForegroundColor Green
+}
+```
+
+### GPOs por departamento
+
+#### Dirección
+| GPO | Descripción |
+|---|---|
+| `Directivos_SinRestricciones` | Sin restricciones de instalación ni Panel de Control |
+| `Directivos_ConfiguracionEscritorio` | Escritorio corporativo profesional |
+| `Directivos_RecursosCompartidos` | Acceso a carpetas financieras y estratégicas |
+
+#### Ventas
+| GPO | Descripción |
+|---|---|
+| `Ventas_BloqueoUSB` | Bloqueo de USB para evitar fuga de datos de clientes |
+| `Ventas_ConfiguracionCRM` | Configuración optimizada para el CRM |
+
+#### RRHH
+| GPO | Descripción |
+|---|---|
+| `RRHH_SeguridadAlta` | Seguridad elevada para datos de nóminas y contratos |
+| `RRHH_BloqueoUSB` | Bloqueo de USB por riesgo de fuga de datos sensibles |
+| `RRHH_ProteccionDatos` | Cifrado de carpetas y cumplimiento LOPD |
+
+#### Informática
+| GPO | Descripción |
+|---|---|
+| `IT_AdminTools` | Acceso a herramientas AD, DHCP, DNS, GPO |
+| `IT_PowerShell` | Ejecución de scripts PowerShell permitida |
+| `IT_RDP` | Acceso remoto a equipos del dominio |
+| `IT_InstalacionSoftware` | Instalación libre de software |
+
+#### Marketing
+| GPO | Descripción |
+|---|---|
+| `Marketing_AccesoUSB` | USB en modo solo lectura o cifrado |
+| `Marketing_SoftwareCreativo` | Permisos de GPU y software de diseño |
+| `Marketing_ImpresionLibre` | Sin restricciones de impresora |
+
+#### Atención al cliente
+| GPO | Descripción |
+|---|---|
+| `Soporte_Lockdown` | Panel de Control bloqueado |
+| `Soporte_SoloAppsAutorizadas` | Solo aplicaciones de soporte permitidas |
+| `Soporte_VoIP` | Permisos de micrófono y firewall para VoIP |
+
+#### Administración
+| GPO | Descripción |
+|---|---|
+| `Admin_BloqueoUSB` | Bloqueo de USB no autorizados |
+| `Admin_SoftwareOficial` | Solo software corporativo permitido |
+| `Admin_Contabilidad` | Acceso restringido a datos contables críticos |
+
+---
+
+## Perfiles móviles
+
+Un **perfil móvil** permite que un usuario inicie sesión desde cualquier equipo del dominio y su escritorio/configuración se sincronice automáticamente al cerrar sesión.
+
+### 1. Crear y compartir la carpeta en el servidor
+
+```
+C:\PerfilesMoviles  →  Compartir como: Perfiles$
+```
+
+> El símbolo `$` oculta la carpeta en red (accesible solo por ruta directa).
+
+### 2. Permisos NTFS sobre la carpeta
+
+| Usuario / Grupo | Permisos |
+|---|---|
+| SYSTEM | Control total |
+| Administradores del dominio | Control total |
+| Usuarios del dominio | Crear carpetas / Adjuntar datos |
+| Usuarios del dominio | Listar carpeta / Leer datos |
+| Usuarios del dominio | Lectura y ejecución |
+
+### 3. Asignar la ruta al usuario en AD
+
+En **Usuarios y equipos de Active Directory** → propiedades del usuario → pestaña **Perfil**:
+
+```
+Ruta de acceso al perfil:  \\WIN-8EF1EIM3GN7\Perfiles$\%username%
+```
+
+> Sustituye `WIN-8EF1EIM3GN7` por el nombre real de tu servidor.
+
+---
+
+## Red Windows — Integración con infraestructura Vagrant
+
+| Dispositivo | IP | Rol |
+|---|---|---|
+| Windows Server (DC + DHCP + DNS) | `192.168.50.10` | Controlador de dominio |
+| PC-JEFE-AC (Windows Pro) | `192.168.50.20` | Cliente unido al dominio |
+| DB VM (MariaDB) | `192.168.50.100` | Base de datos — red interna |
+| Rango DHCP | `192.168.50.50–200` | Clientes dinámicos |
+
+---
+
+*Documentación generada para el TFG ASIR2 — RuleTheGame.com*
