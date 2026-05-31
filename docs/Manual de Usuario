@@ -1,0 +1,260 @@
+# 📖 Manual de Usuario — RuleTheGame.com
+
+**Plataforma de coaching para videojuegos competitivos**  
+**Versión:** 1.0 | **Fecha:** Mayo 2026
+
+---
+
+## Índice
+
+1. [¿Qué es RuleTheGame?](#qué-es-rulethegame)
+2. [Acceder a la plataforma](#acceder-a-la-plataforma)
+3. [Crear una cuenta](#crear-una-cuenta)
+4. [Iniciar sesión](#iniciar-sesión)
+5. [Página principal](#página-principal)
+6. [Buscar un coach](#buscar-un-coach)
+7. [Ver el perfil de un coach](#ver-el-perfil-de-un-coach)
+8. [Contratar una sesión](#contratar-una-sesión)
+9. [Mi perfil](#mi-perfil)
+10. [Mis sesiones](#mis-sesiones)
+11. [Mensajes](#mensajes)
+12. [Notificaciones](#notificaciones)
+13. [Incidencias](#incidencias)
+14. [Cerrar sesión](#cerrar-sesión)
+
+---
+
+## ¿Qué es RuleTheGame?
+
+RuleTheGame es una plataforma web que conecta **jugadores** con **coaches profesionales** de videojuegos competitivos. Puedes encontrar coaches especializados en juegos como Valorant, League of Legends, CS2 y más, consultar sus perfiles, contratar sesiones de entrenamiento personalizadas y comunicarte directamente con ellos.
+
+---
+
+## Acceder a la plataforma
+
+Abre tu navegador e introduce la dirección:
+
+```
+https://192.168.10.1
+```
+
+> ⚠️ Es posible que el navegador muestre un aviso de seguridad por el certificado autofirmado. Haz clic en **Avanzado → Continuar** para acceder.
+
+---
+
+## Crear una cuenta
+
+1. En la página principal haz clic en **Registrarse**
+2. Rellena el formulario con tus datos:
+
+| Campo | Descripción | Obligatorio |
+|---|---|---|
+| Nombre | Tu nombre real | ✅ |
+| Apellido | Tu apellido | ✅ |
+| Nombre de usuario | Nombre visible en la plataforma (ej: ProGamer99) | ✅ |
+| Fecha de nacimiento | Tu fecha de nacimiento | ❌ |
+| Localidad | Tu ciudad | ❌ |
+| Email | Correo electrónico válido | ✅ |
+| Contraseña | Mínimo 8 caracteres | ✅ |
+
+3. Haz clic en **Crear cuenta**
+4. Si todo es correcto verás el mensaje ✅ *¡Cuenta creada! Ya puedes iniciar sesión*
+5. Haz clic en el enlace para ir al login
+
+> ❗ El email y el nombre de usuario deben ser únicos. Si ya están registrados, el sistema te avisará.
+
+---
+
+## Iniciar sesión
+
+1. Haz clic en **Iniciar sesión** en la barra de navegación
+2. Introduce tu **email o nombre de usuario** y tu **contraseña**
+3. Haz clic en **Iniciar sesión**
+
+Si las credenciales son correctas serás redirigido a la página principal con tu sesión activa.
+
+> 💡 Puedes usar el icono 👁️ para mostrar u ocultar la contraseña mientras la escribes.
+
+---
+
+## Página principal
+
+Una vez dentro verás:
+
+- **Barra de navegación** con acceso a Inicio, Servicios, Coaches y tu perfil
+- **Hero** con acceso rápido a registro y coaches
+- **Estadísticas** de la plataforma (+500 coaches, 12K jugadores…)
+- **Sección de servicios** (sesiones 1 a 1, análisis de partidas, planes de entrenamiento)
+- **Coaches destacados** con acceso directo a sus perfiles
+
+---
+
+## Buscar un coach
+
+1. Haz clic en **Coaches** en el menú de navegación
+2. Verás la lista completa de coaches disponibles con su nombre, juego, especialidad, valoración y precio por hora
+
+### Filtrar por juego
+
+Haz clic en uno de los botones de juego (Valorant, League of Legends, CS2…) para ver solo los coaches de esa disciplina.
+
+### Buscar por nombre o especialidad
+
+Escribe en la caja de búsqueda y pulsa **Buscar**. Para eliminar el filtro activo haz clic en **✕ Limpiar**.
+
+---
+
+## Ver el perfil de un coach
+
+Desde la lista de coaches haz clic en **Ver perfil**. En la página del coach encontrarás:
+
+- **Nombre, juego y especialidad**
+- **Valoración media** (estrellas de 1 a 5)
+- **Precio por hora**
+- **Descripción** del coach y su experiencia
+- **Email de contacto**
+- **Formulario para contratar sesión**
+- **Botón para enviar un mensaje directo**
+- **Comentarios** de otros usuarios
+
+---
+
+## Contratar una sesión
+
+Desde el perfil de un coach (debes estar logueado):
+
+1. Desplázate hasta la sección **🎮 Contratar sesión**
+2. Selecciona la **fecha** y la **hora**
+3. Elige la **duración**: 30 min, 1 hora, 1h 30min o 2 horas
+4. Añade **notas opcionales** (en qué quieres que te ayude)
+5. Haz clic en **Confirmar sesión**
+
+Si la sesión se crea correctamente verás el mensaje ✅ *¡Sesión contratada correctamente!*
+
+> ℹ️ No puedes contratar sesiones en tu propio perfil si eres coach.
+
+---
+
+## Mi perfil
+
+Haz clic en **Mi perfil** en la barra de navegación. Desde aquí puedes:
+
+### Ver tus datos
+
+- Tu nombre, usuario y fecha de registro
+- Acceso rápido a tus incidencias
+
+### Editar tu información
+
+Modifica cualquiera de tus datos personales y haz clic en **Guardar cambios**.
+
+Para **cambiar la contraseña** rellena los campos *Nueva contraseña* y *Repetir contraseña* (mínimo 8 caracteres). Si los dejas en blanco la contraseña no cambia.
+
+---
+
+## Mis sesiones
+
+Dentro de tu perfil verás la sección **🎮 Mis sesiones** con todas tus sesiones contratadas.
+
+### Estados de una sesión
+
+| Estado | Significado |
+|---|---|
+| ⏳ Pendiente | La sesión está reservada y próxima a realizarse |
+| ✅ Completada | La sesión ya se realizó y el coach la marcó como completada |
+| ❌ Cancelada | La sesión fue cancelada |
+
+### Cancelar una sesión
+
+Puedes cancelar una sesión en estado **Pendiente** haciendo clic en **Cancelar sesión** y confirmando en el diálogo. Una vez cancelada no puede reactivarse.
+
+---
+
+## Mensajes
+
+Puedes comunicarte directamente con cualquier coach a través del sistema de mensajería interno.
+
+### Enviar un mensaje a un coach
+
+1. Ve al perfil del coach
+2. Haz clic en **Enviar mensaje**
+3. Escribe tu mensaje y pulsa **Enviar** (o presiona `Enter`)
+
+### Ver tus conversaciones
+
+Haz clic en **✉️ Mensajes** en la barra de navegación. Verás la lista de todas tus conversaciones ordenadas por el más reciente.
+
+- Los mensajes **no leídos** aparecen con un contador rojo
+- Haz clic en una conversación para abrirla
+
+### Dentro de una conversación
+
+- Los mensajes **en azul/derecha** son los tuyos
+- Los mensajes **en gris/izquierda** son del otro usuario
+- Los mensajes nuevos aparecen automáticamente cada pocos segundos (sin recargar la página)
+- Usa `Shift + Enter` para hacer un salto de línea sin enviar
+
+---
+
+## Notificaciones
+
+El icono **🔔** en la barra de navegación te avisa cuando tienes una sesión próxima.
+
+- Recibirás una notificación cuando una sesión comience en **menos de 20 minutos**
+- El número en rojo indica notificaciones sin leer
+- Haz clic en la campana para ver el listado
+- Haz clic en una notificación para marcarla como leída
+
+---
+
+## Incidencias
+
+Si tienes algún problema con la plataforma puedes abrir una incidencia para que el equipo de soporte te ayude.
+
+### Abrir una incidencia
+
+1. Ve a **Mi perfil** y haz clic en **🎫 Mis incidencias**
+2. Haz clic en **+ Nueva incidencia**
+3. Rellena el **título** (resumen del problema) y la **descripción detallada**
+4. Haz clic en **Enviar incidencia**
+
+### Ver el estado de tus incidencias
+
+Desde **Mis incidencias** puedes ver todas las que has abierto con su estado actual:
+
+| Estado | Significado |
+|---|---|
+| 🟡 Abierta | Incidencia recibida, pendiente de revisión |
+| 🔵 En curso | El equipo está trabajando en ella |
+| 🟢 Resuelta | El problema ha sido solucionado |
+
+---
+
+## Cerrar sesión
+
+Haz clic en **Cerrar sesión** en la barra de navegación. Serás redirigido a la página principal y tu sesión quedará cerrada.
+
+> 🔒 Por seguridad cierra siempre la sesión cuando uses un equipo compartido.
+
+---
+
+## Preguntas frecuentes
+
+**¿Puedo dejar un comentario a un coach?**  
+Sí, desde el perfil del coach encontrarás la sección de valoraciones. Solo puedes dejar un comentario por coach.
+
+**¿Puedo editar o borrar mi comentario?**  
+No, los comentarios publicados no pueden modificarse.
+
+**¿Qué pasa si cancelo una sesión?**  
+La sesión queda como cancelada. Tendrás que contratar una nueva sesión si quieres volver a reservar.
+
+**No recibo la confirmación de mi sesión. ¿Qué hago?**  
+Comprueba la sección *Mis sesiones* en tu perfil. Si no aparece, abre una incidencia.
+
+**¿Puedo registrarme como coach?**  
+El registro de coaches lo gestiona el administrador de la plataforma. Contacta con el equipo a través de la página de **Contacto**.
+
+---
+
+*RuleTheGame.com — TFG ASIR2 · Francisco Javier Pereira Benito*
