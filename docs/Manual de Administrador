@@ -1,0 +1,475 @@
+# 🔧 Manual de Administrador — RuleTheGame.com
+
+**Plataforma de coaching para videojuegos competitivos**  
+**Versión:** 1.0 | **Fecha:** Mayo 2026  
+**Audiencia:** Administradores del sistema y del sitio web
+
+---
+
+## Índice
+
+1. [Infraestructura](#infraestructura)
+2. [Acceso al panel de administración web](#acceso-al-panel-de-administración-web)
+3. [Gestión de coaches](#gestión-de-coaches)
+4. [Gestión de usuarios](#gestión-de-usuarios)
+5. [Gestión de sesiones](#gestión-de-sesiones)
+6. [Gestión de incidencias](#gestión-de-incidencias)
+7. [Acceso a la base de datos](#acceso-a-la-base-de-datos)
+8. [Despliegue y actualización del código](#despliegue-y-actualización-del-código)
+9. [Gestión de la infraestructura Vagrant](#gestión-de-la-infraestructura-vagrant)
+10. [Credenciales del sistema](#credenciales-del-sistema)
+
+---
+
+## Infraestructura
+
+La plataforma corre sobre **5 máquinas virtuales Debian** gestionadas con Vagrant + VirtualBox, distribuidas en tres redes internas.
+
+### Máquinas virtuales
+
+| VM | IP | Rol |
+|---|---|---|
+| `router` | `192.168.10.1` / `10.0.0.1` / `192.168.50.1` | Enrutamiento, NAT, DNAT (HTTPS → balancer) |
+| `balancer` | `192.168.10.2` / `10.0.0.2` | Nginx — balanceo de carga + HTTPS (SSL) |
+| `web1` | `10.0.0.21` | Apache + PHP — servidor web 1 |
+| `web2` | `10.0.0.22` | Apache + PHP — servidor web 2 |
+| `db` | `10.0.0.100` / `192.168.50.100` | MariaDB — base de datos |
+
+### Redes
+
+| Red | Segmento | Uso |
+|---|---|---|
+| Red externa | `192.168.10.0/24` | Acceso desde el host al balanceador |
+| Red interna web | `10.0.0.0/24` | Comunicación balancer ↔ web1 ↔ web2 ↔ db |
+| Red Windows | `192.168.50.0/24` | Integración con Windows Server y HeidiSQL |
+
+### Flujo de una petición
+
+```
+Usuario (HTTPS) → 192.168.10.1:443 (router DNAT)
+                → 192.168.10.2:443 (balancer Nginx SSL)
+                → 10.0.0.21 o 10.0.0.22 (web1/web2 Apache+PHP)
+                → 10.0.0.100:3306 (db MariaDB)
+```
+
+---
+
+## Acceso al panel de administración web
+
+### Credenciales de administrador
+
+| Campo | Valor |
+|---|---|
+| URL | `https://192.168.10.1` |
+| Usuario | `fran` |
+| Contraseña | `Admin1234` *(cambiar en producción)* |
+| ID en BD | `1` |
+
+> El panel de administración solo es accesible cuando el `usuario_id` de la sesión es `1`. Cualquier otro usuario no verá el botón ni podrá acceder a `/admin/admin.php`.
+
+### ¿Qué puedes hacer desde el panel?
+
+- ✅ Ver, crear, editar y eliminar **coaches**
+- ✅ Ver, editar y eliminar **usuarios**
+- ✅ Ver y gestionar **sesiones**
+- ✅ Ver y gestionar **incidencias**
+
+---
+
+## Gestión de coaches
+
+### Crear un coach
+
+Desde el panel de admin → sección **Coaches** → **Nuevo coach**.
+
+Los coaches deben tener previamente una cuenta de usuario registrada en la plataforma. Al crear el coach se le asigna el `usuario_id` correspondiente y su rol pasa a ser `coach` en la tabla `usuarios`.
+
+Campos requeridos:
+
+| Campo | Descripción |
+|---|---|
+| `usuario_id` | ID del usuario ya registrado |
+| `nombre` / `apellido` | Nombre del coach |
+| `especialidad` | Rol o estilo de juego (ej: AWPer, Mid lane) |
+| `juego` | Juego principal (ej: Valorant, CS2) |
+| `descripcion` | Texto de presentación visible en su perfil |
+| `precio` | Precio por hora en euros |
+| `contacto` | Email de contacto del coach |
+
+### Editar un coach
+
+Desde el panel o directamente desde el perfil del coach (si estás logueado como ese usuario coach):  
+`https://192.168.10.1/perfil_coach/editar_coach.php?id=[ID]`
+
+### Eliminar un coach
+
+Solo desde el panel de admin. Al eliminar un coach se elimina su registro en la tabla `coaches`. El usuario asociado permanece en la BD.
+
+---
+
+## Gestión de usuarios
+
+### Ver todos los usuarios
+
+Panel de admin → sección **Usuarios**. Muestra la lista completa con nombre, email, rol y fecha de registro.
+
+### Cambiar el rol de un usuario
+
+Directamente en la base de datos o desde el panel:
+
+```sql
+UPDATE usuarios SET rol = 'coach' WHERE id = [ID];
+```
+
+Roles disponibles: `cliente` (por defecto), `coach`.
+
+### Eliminar un usuario
+
+Desde el panel de admin. Al eliminar un usuario se eliminan también sus mensajes, comentarios y sesiones asociadas (si las FK tienen `ON DELETE CASCADE`).
+
+> ⚠️ No elimines el usuario con `id = 1` (administrador).
+
+---
+
+## Gestión de sesiones
+
+### Estados de las sesiones
+
+| Estado | Quién lo cambia |
+|---|---|
+| `pendiente` | Se crea así por defecto al contratar |
+| `completada` | El coach desde su perfil o panel de sesiones |
+| `cancelada` | El cliente desde su perfil |
+
+### Consultar sesiones desde la BD
+
+```sql
+-- Ver todas las sesiones con cliente y coach
+SELECT s.id, s.fecha, s.duracion, s.estado,
+       uc.nombre AS cliente, uco.nombre AS coach
+FROM sesiones s
+JOIN usuarios uc  ON s.cliente_id = uc.id
+JOIN coaches  co  ON s.coach_id   = co.id
+JOIN usuarios uco ON co.usuario_id = uco.id
+ORDER BY s.fecha DESC;
+```
+
+---
+
+## Gestión de incidencias
+
+Las incidencias se gestionan desde el panel de admin → sección **Incidencias**.
+
+### Estados
+
+| Estado | Descripción |
+|---|---|
+| `abierta` | Recibida, pendiente de revisión |
+| `en_curso` | En proceso de resolución |
+| `resuelta` | Solucionada |
+
+### Cambiar el estado de una incidencia
+
+Desde el panel de admin o directamente en la BD:
+
+```sql
+UPDATE incidencias SET estado = 'en_curso'  WHERE id = [ID];
+UPDATE incidencias SET estado = 'resuelta'  WHERE id = [ID];
+```
+
+---
+
+## Acceso a la base de datos
+
+### Desde HeidiSQL (Windows)
+
+| Parámetro | Valor |
+|---|---|
+| Host | `192.168.50.100` |
+| Puerto | `3306` |
+| Usuario | `gestor` |
+| Contraseña | `GestorRTG2024!` |
+| Base de datos | `proyecto_asir` |
+
+> Este usuario solo acepta conexiones desde `192.168.50.20` (PC-JEFE-AC). Las reglas de iptables en la VM db bloquean el resto.
+
+### Desde la VM db (SSH)
+
+```bash
+# Conectar a la VM db
+vagrant ssh db
+
+# Entrar a MariaDB como root
+mysql -u root -p
+
+# O como el usuario PHP
+mysql -u rtg_php -p'CambiarPasswordPHP!' proyecto_asir
+```
+
+### Usuario PHP (web)
+
+| Parámetro | Valor |
+|---|---|
+| Host | `10.0.0.100` |
+| Usuario | `rtg_php` |
+| Contraseña | `CambiarPasswordPHP!` |
+| Base de datos | `proyecto_asir` |
+| Acceso permitido desde | `10.0.0.21`, `10.0.0.22` (web1 y web2) |
+
+### Esquema de la base de datos
+
+```
+proyecto_asir
+├── usuarios       (id, nombre, apellido, nom_usu, email, password, rol, fecha_nac, localidad, created_at)
+├── coaches        (id, usuario_id, nombre, apellido, especialidad, juego, descripcion, precio, valoracion_media, contacto)
+├── sesiones       (id, cliente_id, coach_id, fecha, duracion, estado, notas, created_at)
+├── comentarios    (id, coach_id, usuario_id, comentario, valoracion, created_at)
+├── mensajes       (id, emisor_id, receptor_id, contenido, leido, created_at)
+├── incidencias    (id, usuario_id, rol, titulo, descripcion, estado, asignado_a, created_at)
+└── notificaciones (id, usuario_id, sesion_id, mensaje, leida, created_at)
+```
+
+---
+
+## Despliegue y actualización del código
+
+### Ruta local del proyecto
+
+```
+C:\Users\javif\OneDrive\Documentos\Rulethegame\proyecto_final\web\
+```
+
+### Pasos para desplegar cambios
+
+**1. Ajustar permisos en la VM db (carpeta NFS)**
+
+```bash
+vagrant ssh db
+sudo chown vagrant:vagrant /var/www/html -R
+exit
+```
+
+**2. Copiar archivos via SCP**
+
+```bash
+# Desde PowerShell en Windows
+scp -i C:\Users\javif\.vagrant.d\insecure_private_key `
+    -P 2222 -r `
+    C:\Users\javif\OneDrive\Documentos\Rulethegame\proyecto_final\web\* `
+    vagrant@127.0.0.1:/var/www/html/
+```
+
+**3. Restaurar permisos correctos**
+
+```bash
+vagrant ssh db
+sudo chown www-data:www-data /var/www/html -R
+sudo chmod 755 /var/www/html -R
+sudo chmod 1777 /var/www/html/sessions   # carpeta de sesiones PHP
+exit
+```
+
+> Las VMs web1 y web2 montan `/var/www/html` por NFS desde la VM db, por lo que el cambio es inmediato en los dos servidores web.
+
+### Estructura de carpetas del proyecto
+
+```
+web/
+├── db.php                        ← Conexión a la base de datos
+├── main.php                      ← Página principal
+├── logout.php                    ← Cierre de sesión
+├── rulethegame.css               ← CSS global (tema rojo/negro)
+├── rulethegame.js                ← JS global (carrusel)
+├── inicio_sesion/
+│   ├── inicio_sesion.php
+│   └── inicio_sesion.css
+├── pag_registro/
+│   ├── registro.php
+│   └── registro.css
+├── coaches/
+│   ├── coaches.php
+│   └── coaches.css
+├── perfil/
+│   ├── perfil.php
+│   └── perfil.css
+├── perfil_coach/
+│   ├── perfil_coach.php
+│   ├── editar_coach.php
+│   ├── sesiones_coach.php
+│   └── perfil_coach.css
+├── mensajes/
+│   ├── mensajes.php
+│   ├── conversacion.php
+│   └── mensajes.css
+├── incidencias/
+│   ├── incidencias.php
+│   └── mis_incidencias.php
+├── notificaciones/
+│   ├── check_sesiones.php        ← Genera notificaciones de sesiones próximas
+│   ├── get_notificaciones.php    ← Devuelve notificaciones no leídas (JSON)
+│   ├── marcar_leida.php          ← Marca una notificación como leída
+│   └── notificaciones.js         ← Polling de notificaciones (cliente)
+├── admin/
+│   ├── admin.php
+│   └── admin.css
+├── contacto/
+│   └── contacto.php
+├── imagenes/                     ← Imágenes del carrusel
+└── sessions/                     ← Sesiones PHP (chmod 1777)
+```
+
+---
+
+## Gestión de la infraestructura Vagrant
+
+### Iniciar todas las VMs
+
+```bash
+cd C:\Users\javif\OneDrive\Documentos\Rulethegame\proyecto_final
+vagrant up
+```
+
+### Estado de las VMs
+
+```bash
+vagrant status
+```
+
+### Conectarse a una VM por SSH
+
+```bash
+vagrant ssh router
+vagrant ssh balancer
+vagrant ssh web1
+vagrant ssh web2
+vagrant ssh db
+```
+
+### Reiniciar una VM
+
+```bash
+vagrant reload web1
+```
+
+### Reprovisionar (aplicar scripts de configuración de nuevo)
+
+```bash
+vagrant provision db
+vagrant provision router
+```
+
+### Apagar todas las VMs
+
+```bash
+vagrant halt
+```
+
+### Destruir y recrear desde cero
+
+```bash
+vagrant destroy -f
+vagrant up
+```
+
+---
+
+## Credenciales del sistema
+
+> ⚠️ Estas credenciales son de entorno de laboratorio. Cambiarlas antes de cualquier despliegue en producción.
+
+### Web — Usuarios de prueba
+
+| Usuario | Contraseña | Rol |
+|---|---|---|
+| `fran` | `Admin1234` | Administrador (id=1) |
+| `cliente1` | `Cliente1234` | Cliente |
+| *(usuarios coach)* | `Coach1234` | Coach |
+
+### Base de datos
+
+| Contexto | Usuario | Contraseña | Host |
+|---|---|---|---|
+| Aplicación PHP | `rtg_php` | `CambiarPasswordPHP!` | `10.0.0.100` |
+| HeidiSQL (gestión) | `gestor` | `GestorRTG2024!` | `192.168.50.100` |
+| Root MariaDB | `root` | *(configurado en provisión)* | `localhost` |
+
+### SSH Vagrant
+
+| VM | Puerto local | Usuario | Clave |
+|---|---|---|---|
+| db | `2222` | `vagrant` | `~/.vagrant.d/insecure_private_key` |
+| web1 | `2200` | `vagrant` | `~/.vagrant.d/insecure_private_key` |
+| web2 | `2201` | `vagrant` | `~/.vagrant.d/insecure_private_key` |
+
+### Certificado HTTPS
+
+- **Tipo:** Autofirmado (OpenSSL)
+- **Ubicación en balancer:** `/etc/nginx/ssl/`
+- **Dominio:** `192.168.10.1`
+
+---
+
+## Resolución de problemas frecuentes
+
+### La web no carga
+
+```bash
+# Comprobar que el balancer está activo
+vagrant ssh balancer
+sudo systemctl status nginx
+
+# Comprobar que web1/web2 están activos
+vagrant ssh web1
+sudo systemctl status apache2
+```
+
+### Error de conexión a la BD
+
+```bash
+# Comprobar MariaDB en la VM db
+vagrant ssh db
+sudo systemctl status mariadb
+
+# Comprobar que el bind-address está en 0.0.0.0
+grep bind-address /etc/mysql/mariadb.conf.d/50-server.cnf
+```
+
+### Las sesiones PHP no persisten
+
+```bash
+vagrant ssh db
+ls -la /var/www/html/sessions/
+# Debe tener permisos 1777 y ser de www-data
+sudo chmod 1777 /var/www/html/sessions
+sudo chown www-data:www-data /var/www/html/sessions
+```
+
+### El router no enruta el tráfico
+
+```bash
+vagrant ssh router
+# Comprobar IP forwarding
+cat /proc/sys/net/ipv4/ip_forward    # debe ser 1
+
+# Comprobar regla DNAT
+sudo iptables -t nat -L -n -v | grep 443
+```
+
+---
+
+## Repositorio
+
+```
+https://github.com/fjpereirab01/Proyecto_final_ASIR2
+```
+
+### Estructura de ramas recomendada
+
+| Rama | Uso |
+|---|---|
+| `main` | Código estable y documentación |
+| `dev` | Desarrollo activo |
+
+---
+
+*RuleTheGame.com — TFG ASIR2 · Francisco Javier Pereira Benito*
